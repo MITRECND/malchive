@@ -1,0 +1,20 @@
+repos:
+-   repo: https://github.com/pre-commit/pre-commit-hooks.git
+    rev: v2.4.0
+    hooks:
+    -   id: check-ast
+    -   id: check-executables-have-shebangs
+    -   id: check-docstring-first
+    -   id: check-case-conflict
+    -   id: check-merge-conflict
+    -   id: debug-statements
+    -   id: end-of-file-fixer
+    -   id: trailing-whitespace
+-   repo: https://gitlab.com/pycqa/flake8.git
+    rev: "3.7.9"
+    hooks:
+    -   id: flake8
+-   repo: https://github.com/pre-commit/mirrors-mypy.git
+    rev: v0.761
+    hooks:
+    -   id: mypy
