@@ -35,7 +35,7 @@ You will need to install some dependencies for some of the required Python modul
 * Next source install the [YARA Python](https://github.com/VirusTotal/yara-python/releases/) package.
 * Ensure you have sqlite3-dev installed
     - Debian: libsqlite3-dev
-    - Red Hat: sqlite-devel
+    - Red Hat: sqlite-devel / `pip install pysqlite3`
 
 You can then clone the malchive repo and install...
 * `pip install .` when in the parent directory.
