@@ -29,6 +29,7 @@ entry_points = {
         'maldec-cobaltstrike_payload=malchive.decoders.cobaltstrike_payload:main',
         'maldec-sunburst=malchive.decoders.sunburst:main',
         'maldec-sunburst_dga=malchive.decoders.sunburst_dga:main',
+        'maldec-cobaltstrike_shellcode=malchive.decoders.cobaltstrike_shellcode:main',
 
         # utilities
         'malutil-add=malchive.utilities.add:main',
