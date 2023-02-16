@@ -13,7 +13,10 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
+# -----------------
+#
+import asyncio
 import logging
 import ssl
 import socket
@@ -30,7 +33,8 @@ log = logging.getLogger(__name__)
 
 class SSLInfo(discovery.Discover):
 
-    def tickle_socket(self, co, timeout):
+    # TODO: make async
+    async def tickle_tcp(self, co):
         """
         Probe the server for data and make a determination based on
         send/recv traffic.
@@ -38,7 +42,7 @@ class SSLInfo(discovery.Discover):
 
         log.info('Checking: %s:%s' % (co.ip, co.port))
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(timeout)
+        sock.settimeout(self.timeout)
         wrapped_s = ssl.wrap_socket(sock)
 
         try:
@@ -52,15 +56,28 @@ class SSLInfo(discovery.Discover):
         thumb_sha1 = hashlib.sha1(der_cert_bin).hexdigest()
         thumb_sha256 = hashlib.sha256(der_cert_bin).hexdigest()
 
-        co.details = {
+        meta = {
             'Query': '%s:%s' % (co.ip, co.port),
             'MD5': thumb_md5,
             'SHA1': thumb_sha1,
             'SHA256': thumb_sha256,
         }
 
+        co.details['meta'] = meta
+        co.details['payload'] = der_cert_bin
         co.success = True
         return co
+
+    def write_payload(self, payload, directory='.'):
+        """
+        Write the retrieved payload to disk.
+        """
+
+        sha256 = hashlib.sha256(payload).hexdigest()
+        fname = '%s/%s.der' % (directory, sha256)
+        with open(fname, 'wb') as f:
+            f.write(payload)
+        log.info('%s written to disk!' % fname)
 
 
 def initialize_parser():
@@ -82,6 +99,13 @@ def initialize_parser():
                         help='How long (in seconds) to wait before timeout '
                              'for each connection attempt. Defaults to five '
                              'seconds.')
+    parser.add_argument('-w', '--write', action='store_true',
+                        default=False,
+                        help='Write retrieved DER to disk '
+                             'using [MD5.der] as the filename.')
+    parser.add_argument('-t', '--target-directory', type=str, default='.',
+                        help='Target directory to write files. Defaults to '
+                             'executing directory.')
     parser.add_argument('-v', '--verbose', action='store_true',
                         default=False,
                         help='Output additional information when processing '
@@ -91,6 +115,8 @@ def initialize_parser():
 
 
 def main():
+    import sys
+    import os
 
     p = initialize_parser()
     args = p.parse_args()
@@ -102,6 +128,13 @@ def main():
     else:
         root.setLevel(logging.WARNING)
 
+    directory = args.target_directory
+    if directory != '.':
+        if not os.path.isdir(directory):
+            log.error('Could not create %s. Exiting...'
+                      % directory)
+            sys.exit(2)
+
     d = SSLInfo(
         ips=args.ipaddress,
         ports=args.port,
@@ -109,12 +142,22 @@ def main():
         timeout=args.timeout,
         protocols=['tcp'],
     )
-    d.run()
 
-    for co in d.results:
-        if co.success:
-            jo = json.dumps(co.details, indent=4)
+    comms = discovery.create_comms(
+            d.protocols,
+            d.ips,
+            d.ports
+            )
+
+    results = []
+    asyncio.run(d.run(comms, results))
+
+    for co in results:
+        if co.success and 'meta' in co.details.keys():
+            jo = json.dumps(co.details['meta'], indent=4)
             print(jo)
+        if args.write and 'payload' in co.details.keys():
+            d.write_payload(co.details['payload'], directory)
 
 
 if __name__ == '__main__':

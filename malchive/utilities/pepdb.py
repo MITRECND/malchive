@@ -114,7 +114,7 @@ class PDBInfo:
 
         signature = getattr(entry, 'CvSignature', None)
         if signature is not None:
-            signature = struct.pack('I', entry.CvSignature).decode('ascii')
+            signature = entry.CvSignature.decode('ascii')
         else:
             log.debug('No signature entry found.')
 
@@ -133,11 +133,14 @@ class PDBInfo:
                    ).decode('ascii') + \
                    '-' + \
                    binascii.hexlify(
-                       entry.Signature_Data4[:2]
+                       struct.pack('B', entry.Signature_Data4)
+                   ).decode('ascii') + \
+                   binascii.hexlify(
+                       struct.pack('B', entry.Signature_Data5)
                    ).decode('ascii') + \
                    '-' + \
                    binascii.hexlify(
-                       entry.Signature_Data4[2:]
+                       entry.Signature_Data6
                    ).decode('ascii') + \
                    '}'
 
@@ -155,6 +158,8 @@ def initialize_parser():
                     ' PDB CodeView info from them.')
     parser.add_argument('infile', metavar='FILE', nargs='*',
                         help='Full path to the file to be processed.')
+    parser.add_argument('-t', '--table', action='store_true',
+                        help='Show results in table format instead of JSON.')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Output additional information when processing '
                              '(mostly for debugging purposes).')
@@ -163,6 +168,9 @@ def initialize_parser():
 
 
 def main():
+
+    import json
+
     p = initialize_parser()
     args = p.parse_args()
 
@@ -208,13 +216,31 @@ def main():
         for d in dbg.results:
             results.append(((basename,) + d))
 
-    results = sorted(results, key=operator.itemgetter(1, 0))
+    if args.table and len(results) > 0:
+        results = sorted(results, key=operator.itemgetter(1, 0))
 
-    table_header = ["Filename", "Debug Timestamp", "Signature",
-                    "Revisions", "Path", "GUID"]
+        table_header = ["Filename", "Debug Timestamp", "Signature",
+                        "Revisions", "Path", "GUID"]
 
-    if len(results) > 0:
         print(tabulate(results, headers=table_header, tablefmt="grid"))
+    elif len(results) > 0:
+
+        for fname, debug_time, sig, rev, path, guid in results:
+            j = {
+                 'Filename': fname,
+                 'Debug Timestamp': debug_time,
+                 'Signature': sig,
+                 'Revisions': rev,
+                 'Path': path,
+                 'GUID': guid,
+                }
+            try:
+                print(json.dumps(j, indent=4, sort_keys=False))
+            except UnicodeDecodeError:
+                log.warning('There was a Unicode decoding error when processing %s'
+                            % fname)
+                continue
+
     else:
         print('No debug information found!')
 

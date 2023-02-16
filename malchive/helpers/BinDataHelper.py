@@ -21,6 +21,8 @@ __version__ = "1.0.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)
+root = logging.getLogger()
+logging.basicConfig()
 
 
 class LiteCrypt():
@@ -71,10 +73,24 @@ class LiteCrypt():
 
 
 def autokey(x):
-    # Ensure we pad the key if necessary with an extra 0
     key = '%x' % autoint(x)
+
+    # hex data must be supplied in pairs
+    if x.startswith('0x') and len(x) % 2 != 0:
+        log.error('Hex data must be provided in even pairs (ex: 0x01 as opposed to 0x1).')
+        raise ValueError
+
+    # if provided hex bytes, honor the leading nulls if present
+    if x.startswith('0x00') and len(x) > 4:
+        i = 2
+        while x[i:i+2] == '00':
+            key = '00' + key
+            i += 2
+
+    # ensures single digits can be unhexlified
     if len(key) % 2 != 0:
         key = '0' + key
+
     key = [x for x in binascii.unhexlify(key)]
     return key
 

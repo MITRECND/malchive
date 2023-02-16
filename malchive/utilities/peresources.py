@@ -96,9 +96,11 @@ def initialize_parser():
                     'Entries with \'-\' are unlabeled.')
     parser.add_argument('infile', metavar='FILE', nargs='*',
                         help='Full path to the file(s) to be processed.')
+    parser.add_argument('-t', '--table', action='store_true',
+                        help='Show results in table format instead of JSON.')
     parser.add_argument('-w', '--write', action='store_true',
                         help='Write the file(s) to disk. Creates a directory '
-                             'with MD5 hash and \'_rsrc\' prefix of the '
+                             'with SHA256 hash and \'_rsrc\' prefix of the '
                              'provided sample and extracts payloads there.')
     parser.add_argument('-v', '--verbose', action='store_true', default=False,
                         help='Output additional information when processing '
@@ -108,6 +110,9 @@ def initialize_parser():
 
 
 def main():
+
+    import json
+
     p = initialize_parser()
     args = p.parse_args()
 
@@ -145,12 +150,12 @@ def main():
             log.error('%s' % e)
             continue
 
-        print('Found %s resources in %s...' % (len(resources), basename))
         if len(resources) == 0:
+            print('No resources found in %s...' % basename)
             continue
 
         results = []
-        target_dir = '%s_rsrc' % hashlib.md5(stream).hexdigest()
+        target_dir = '%s_rsrc' % hashlib.sha256(stream).hexdigest()
         if args.write:
             try:
                 os.makedirs(target_dir, exist_ok=True)
@@ -159,20 +164,45 @@ def main():
                     log.error('Could not create %s' % target_dir)
 
         for res_dir, res_type, e_name, e_id, e_size, e_data in resources:
-            md5 = hashlib.md5(e_data).hexdigest()
-            results.append((md5, res_dir, res_type, e_name, e_id, e_size))
+            sha256 = hashlib.sha256(e_data).hexdigest()
 
-            name = '%s/%s.bin' % (target_dir, md5)
+            if args.table:
+                results.append((sha256, res_dir, res_type, e_name, e_id, e_size))
+            else:
+                results.append({
+                                'SHA256': sha256,
+                                'Directory': res_dir,
+                                'Type': res_type,
+                                'Name': e_name,
+                                'ID': e_id,
+                                'Size': e_size,
+                               })
+
+            name = '%s/%s.bin' % (target_dir, sha256)
             if args.write:
                 with open(name, 'wb+') as f:
                     f.write(e_data)
                 log.info('%s written to disk.' % name)
 
-        if len(results) > 0:
+        if args.table and len(results) > 0:
+            print('Found %s resources in %s...' % (len(resources), basename))
             print(tabulate(results,
-                           headers=["MD5", "Directory", "Type",
+                           headers=["SHA256", "Directory", "Type",
                                     "Name", "ID", "Size"],
                            tablefmt="grid"))
+        elif len(results) > 0:
+            file_results = {
+                            'file': basename,
+                            'count': len(resources),
+                            'results': results
+                           }
+
+            try:
+                print(json.dumps(file_results, indent=4, sort_keys=False))
+            except UnicodeDecodeError:
+                log.warning('There was a Unicode decoding error when processing %s'
+                            % basename)
+                continue
 
 
 if __name__ == '__main__':

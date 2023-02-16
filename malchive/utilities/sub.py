@@ -80,9 +80,9 @@ class GenericSubtract(BinDataHelper.LiteCrypt):
             else:
                 decoded.append(byte - k & 0xff)
 
-            k = k + self.key_count & 0xff
-            self.key[counter % len(self.key)] = k
-            counter += 1
+                k = k + self.key_count & 0xff
+                self.key[counter % len(self.key)] = k
+                counter += 1
 
         return decoded
 

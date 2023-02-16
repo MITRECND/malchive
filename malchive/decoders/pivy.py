@@ -357,7 +357,7 @@ def main():
         d = GetConfig(stream)
 
         config_dict = {
-            'MD5': hashlib.md5(stream).hexdigest(),
+            'SHA256': hashlib.sha256(stream).hexdigest(),
             'Config': d.elements,
         }
 
