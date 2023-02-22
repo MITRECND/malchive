@@ -9,6 +9,11 @@ __version__ = "1.0.0"
 
 log = logging.getLogger(__name__)
 
+# Reference:
+# https://github.com/MythicAgents/Apollo
+# Reference sample:
+# https://www.virustotal.com/gui/file/f78628c0ecca360a4c9d33f67bf394955c8b89929e9ca611e2f2dbe6e170ece5
+
 
 class GetConfig:
 
