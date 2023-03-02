@@ -24,7 +24,7 @@ from string import ascii_letters, digits
 from random import sample, randint
 from async_timeout import timeout
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)

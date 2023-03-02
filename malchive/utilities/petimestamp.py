@@ -23,7 +23,7 @@ import operator
 from tabulate import tabulate
 from datetime import datetime
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)

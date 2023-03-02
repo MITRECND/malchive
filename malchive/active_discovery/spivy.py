@@ -22,7 +22,7 @@ from random import choice, randint
 from string import digits
 from async_timeout import timeout
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)

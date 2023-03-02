@@ -110,7 +110,7 @@ def main():
 
     setup(
         name='malchive',
-        version='1.0',
+        version='2.0',
         packages=packages,
         include_package_data=True,
         python_requires='>=3.5',
