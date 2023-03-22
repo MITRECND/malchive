@@ -29,6 +29,8 @@ entry_points = {
         'maldec-cobaltstrike_payload=malchive.decoders.cobaltstrike_payload:main',
         'maldec-sunburst=malchive.decoders.sunburst:main',
         'maldec-sunburst_dga=malchive.decoders.sunburst_dga:main',
+        'maldec-apollo=malchive.decoders.apollo:main',
+        'maldec-rzstreet_dumper=malchive.decoders.rzstreet_dumper:main',
 
         # utilities
         'malutil-add=malchive.utilities.add:main',
@@ -56,10 +58,17 @@ entry_points = {
         'malutil-b64dump=malchive.utilities.b64dump:main',
         'malutil-cobaltstrike_malleable_restore=malchive.utilities.cobaltstrike_malleable_restore:main',
         'malutil-ssl_cert=malchive.utilities.ssl_cert:main',
+        'malutil-brute_xor=malchive.utilities.brute_xor:main',
+        'malutil-hashes=malchive.utilities.hashes:main',
+        'malutil-pecarver=malchive.utilities.pecarver:main',
+        'malutil-reverse_bytes=malchive.utilities.reverse_bytes:main',
+        'malutil-guid_recovery=malchive.utilities.guid_recovery:main',
 
         # active discovery
         'maldisc-meterpreter_reverse_shell=malchive.active_discovery.meterpreter_reverse_shell:main',
         'maldisc-spivy=malchive.active_discovery.spivy:main',
+        'maldisc-cobaltstrike_beacon=malchive.active_discovery.cobaltstrike_beacon:main',
+        'maldisc-shadowpad=malchive.active_discovery.shadowpad:main',
     ],
 }
 
@@ -74,7 +83,13 @@ packages = [
         ]
 
 install_requires = [
-        'pefile',
+        'asyncio',
+        'async_timeout',
+        'aiohttp',
+        'asyncio_dgram',
+        'cffi',
+        'timeout',
+        'pefile>=2023.2.7',
         'capstone',
         'tabulate',
         'progressbar2',
@@ -84,8 +99,9 @@ install_requires = [
         'netstruct',
         'pysqlite3',
         'ipaddress',
+        'netaddr',
         'validators',
-        'python-camellia',
+        'py-tlsh',
         'tld',
 ]
 
@@ -94,10 +110,13 @@ def main():
 
     setup(
         name='malchive',
-        version='1.0',
+        version='2.0',
         packages=packages,
         include_package_data=True,
         python_requires='>=3.5',
+        extras_require={
+            'extras': ['python-camellia'],
+            },
         install_requires=install_requires,
         url='https://github.com/MITRECND/malchive',
         license='Copyright 2021 The MITRE Corporation. All rights reserved.',

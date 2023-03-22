@@ -19,12 +19,11 @@ import sys
 import logging
 import argparse
 import pefile
-import hashlib
 import operator
 from tabulate import tabulate
 from datetime import datetime
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)
@@ -222,8 +221,6 @@ def main():
         with open(fname, 'rb') as f:
             stream = f.read()
 
-        md5 = hashlib.md5(stream).hexdigest()
-
         try:
             pe = pefile.PE(data=stream)
         except pefile.PEFormatError:
@@ -233,7 +230,7 @@ def main():
         compile_timestamp = datetime.utcfromtimestamp(
             pe.FILE_HEADER.TimeDateStamp)
         if args.brief:
-            results.append((md5, basename, datetime.utcfromtimestamp(
+            results.append((basename, datetime.utcfromtimestamp(
                 pe.FILE_HEADER.TimeDateStamp)))
             continue
 
@@ -279,18 +276,18 @@ def main():
                 delay_load_import_timestamp += '%s - %s\n' % \
                                                (dllname, timestamp)
 
-            results.append((md5, basename, compile_timestamp,
+            results.append((basename, compile_timestamp,
                             resource_timestamp, load_config_timestamp,
                             debug_timestamp, export_timestamp,
                             import_timestamp, delay_load_import_timestamp))
         else:
-            results.append((md5, basename, compile_timestamp,
+            results.append((basename, compile_timestamp,
                             resource_timestamp, load_config_timestamp,
                             debug_timestamp, export_timestamp))
 
-    results = sorted(results, key=operator.itemgetter(2, 1, 0))
+    results = sorted(results, key=operator.itemgetter(1, 0))
 
-    table_header = ["MD5", "Filename", "Compile Timestamp"]
+    table_header = ["Filename", "Compile Timestamp"]
     if not args.brief:
         table_header.extend(["Resource Timestamp", "Load Config Timestamp",
                              "Debug Timestamp(s)", "Export Timestamp"])

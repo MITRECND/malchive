@@ -13,13 +13,13 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
+#
 
 import argparse
 import logging
-import binascii
-from struct import unpack
+import struct
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Marcus Eddy & Jason Batchelor"
 
 
@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 
 class ExtractIt:
 
-    def __init__(self, buff, filename):
+    def __init__(self, buff):
         """
         Initialize decoder instance.
 
@@ -36,48 +36,52 @@ class ExtractIt:
         """
 
         self.key = 0
-        self.buff = buff
-        self.decoded_payload = ''
-        self.decoded_payload_filename = filename+'.decoded'
+        self.buff = bytearray(buff)
+        self.decoded_payload = bytearray()
         self.payload = self.decode_payload(self.buff)
 
     def decode_payload(self, buff):
         """
         Find Xor Key and Decode Payload
-
-        :param bytes buff: file input
-
-        :rtype: string
         """
+
+        beacon_magic = [
+                b'\x90\x90',
+                b'\x0f\x1f',
+                b'\x66\x90',
+                b'\x4d\x5a',
+                ]
+
         ff_start = buff[:100].find(b'\xff\xff\xff')
         if ff_start > 1:
-            log.info('FF FF FF Marker Found!')
+            log.info('Encrypted payload marker found!')
 
             buff = buff[ff_start+3:]
 
-            _t, size = unpack('II', buff[0x0:0x8])
+            _t, size = struct.unpack('II', buff[0x0:0x8])
             size ^= _t
 
-            dec = bytearray(buff[0x8:])
-            key = bytearray(buff[:0x4])
+            dec = buff[0x8:]
+            key = buff[:0x4]
 
-            self.key = str(binascii.hexlify(key))
+            if size > len(dec):
+                log.info('Bad size of %s bytes returned for payload %s bytes' %
+                         (size, len(dec)))
+                return
 
-            self.decoded_payload = self.rolling_xor_long(dec, key, size)
-            if self.decoded_payload[:100].find(
-                    b'\x54\x68\x69\x73\x20\x70\x72\x6f\x67\x72\x61\x6d'):
-                log.info('Writing File to Disk')
-                fh = open(self.decoded_payload_filename, 'wb')
-                fh.write(self.decoded_payload)
-                fh.close()
+            self.key = struct.unpack('>I', key)[0]
+
+            decoded = self.rolling_xor_long(dec, key, size)
+            if decoded[:2] in beacon_magic:
+                self.decoded_payload = decoded
+            else:
+                log.info('Beacon PE data was not found in decrypted data.')
 
     @staticmethod
     def rolling_xor_long(dec, key, size):
-
-        for i in range(0, size, 4):
-            for k in range(0, len(key)):
-                dec[i+k] ^= key[k]
-                key[k] ^= dec[i+k]
+        for i in range(0, size):
+            dec[i] ^= key[i % len(key)]
+            key[i % len(key)] ^= dec[i]
 
         return dec
 
@@ -91,10 +95,18 @@ def initialize_parser():
                         default=False,
                         help='Output additional information when processing '
                              '(mostly for debugging purposes).')
+    parser.add_argument('-w', '--write', action='store_true',
+                        default=False,
+                        help='Write retrieved payloads to disk '
+                             'using [MD5.beacon] as the filename.')
+    parser.add_argument('-t', '--target-directory', type=str, default='.',
+                        help='Target directory to write files. Defaults to '
+                             'executing directory.')
     return parser
 
 
 def main():
+    import sys
     import os
     import json
     import hashlib
@@ -109,6 +121,13 @@ def main():
     else:
         root.setLevel(logging.WARNING)
 
+    directory = args.target_directory
+    if directory != '.':
+        if not os.path.isdir(directory):
+            log.error('Could not create %s. Exiting...'
+                      % directory)
+            sys.exit(2)
+
     for filename in args.candidates:
 
         log.info('Processing file %s...' % filename)
@@ -120,15 +139,25 @@ def main():
         f = open(filename, 'rb')
         stream = f.read()
 
-        d = ExtractIt(stream, filename)
+        d = ExtractIt(stream)
+
+        if len(d.decoded_payload) == 0:
+            log.info('Payload not a Cobalt Beacon.')
+            continue
 
         config_dict = {
-            'Input MD5': hashlib.md5(stream).hexdigest(),
+            'Input Sha256': hashlib.sha256(stream).hexdigest(),
             'Input': filename,
-            'Output MD5': hashlib.md5(d.decoded_payload).hexdigest(),
-            'Output': d.decoded_payload_filename,
-            'Xor Key': d.key
+            'Output Sha256': hashlib.sha256(d.decoded_payload).hexdigest(),
+            'XOR Key': hex(d.key)
         }
+
+        if args.write and len(d.decoded_payload):
+            md5 = hashlib.md5(d.decoded_payload).hexdigest()
+            fname = '%s/%s.beacon' % (directory, md5)
+            with open(fname, 'wb') as f:
+                f.write(d.decoded_payload)
+            log.info('%s written to disk!' % fname)
 
         try:
             print((json.dumps(config_dict, indent=4, sort_keys=False)))

@@ -13,15 +13,17 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
+#
+import asyncio
 import socket
 import logging
 import argparse
-import ipaddress
+import netaddr
 from typing import List
 from validators import domain as valid_domain
+from async_timeout import timeout
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)
@@ -34,18 +36,20 @@ class CommObject():
 
     def __init__(
         self,
+        ip: str,
+        port: int,
+        protocol: str,
         success: bool = False,
-        ip: str = None,
-        port: int = None,
-        protocol: str = None,
+        payload: bytearray = bytearray(),
         details: dict = {},
         **kwargs
-    ):
+    ) -> None:
 
         self.success = success
         self.ip = ip
         self.port = port
         self.protocol = protocol
+        self.payload = payload
         self.details = details
 
 
@@ -54,108 +58,128 @@ class Discover():
     Discover object.
     """
 
-    results: list = []
     supported_protocols: list = ['http', 'https', 'tcp', 'udp', 'all']
 
     def __init__(
         self,
-        ips: list = None,
-        ports: list = None,
-        domains: list = None,
-        timeout: int = 5,
-        protocols: list = None,
+        ips: list,
+        ports: list,
+        domains: list,
+        timeout: int,
+        protocols: list,
+        max_semaphore: int = 5000,
         **kwargs
-    ):
+    ) -> None:
 
         self.ips: List[str] = []
         self.ports: List[int] = []
-        self.comms: List[CommObject] = []
 
         self.parse_ips(ips)
         self.parse_ports(ports)
         self.parse_domains(domains)
-
-        self.ips = sorted(set(self.ips))
-        self.protocols = self.parse_protocols(protocols)
-
-        self.comms = self.create_comms()
         self.timeout = timeout
+        self.protocols = self.parse_protocols(protocols)
+        self.max_semaphore = max_semaphore
 
-    def connect(self, co, timeout):
-        """
-        See if you can connect.
-        """
+    async def run(self, comms, results):
 
-        if co.protocol == 'udp':
-            s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        else:
-            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        tasks = []
+        # Max number of concurrent tasks for asyncio, set with caution
+        sem = asyncio.Semaphore(self.max_semaphore)
 
-        s.settimeout(timeout)
-        s.connect((co.ip, co.port))
+        total_tasks = get_comms_count(self.protocols, self.ips, self.ports)
+        if total_tasks == 0:
+            log.warning('No tasks to perform!')
+            return
 
-        return s
+        try:
+            for co in comms:
+                tasks.append(asyncio.ensure_future(self.bound_tickle(sem, co)))
 
-    def run(self):
+            log.debug('Awaiting %s tasks...' % total_tasks)
+            counter = 0
+            for fut in asyncio.as_completed(tasks):
+                results.append(await fut)
+                counter += 1
+                if counter % 100 == 0:
+                    log.debug('%s/%s tasks complete.' % (counter, total_tasks))
+            log.debug('All tasks complete.')
 
-        for co in self.comms:
+        except Exception as e:
+            log.debug('Critical Failure: %s' % str(e))
 
-            try:
-                if co.protocol.startswith('http'):
-                    co = self.tickle_http(co, self.timeout)
-                else:
-                    co = self.tickle_socket(co, self.timeout)
-            except Exception as e:
-                log.debug('Failure: %s: %s:%s:%s' %
-                          (e, co.protocol, co.ip, co.port))
+    async def bound_tickle(self, sem, co):
+        async with sem:
+            if co.protocol.startswith('http'):
+                return await self.tickle_http(co)
+            elif co.protocol == 'udp':
+                return await self.tickle_udp(co)
+            else:
+                return await self.tickle_tcp(co)
 
-            self.results.append(co)
-
-    def tickle_http(self, co, timeout):
+    async def tickle_http(self, co):
         """
         Should be overridden.
         Probe the server for data and make a determination based on
         request/response traffic.
         """
-
-        log.warning('HTTP is not supported! [%s] %s:%s' %
-                    (co.protocol, co.ip, co.port))
+        try:
+            # including in the overridden function to emphasize
+            # the importance of setting a task timer
+            async with timeout(self.timeout):
+                log.warning('HTTP(s) is not supported! [%s] %s:%s' %
+                            (co.protocol, co.ip, co.port))
+        except asyncio.TimeoutError:
+            log.debug('Failure: TimeoutError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
 
         return co
 
-    def tickle_socket(self, co, timeout):
+    async def tickle_udp(self, co):
         """
         Should be overridden.
         Probe the server for data and make a determination based on
         send/recv traffic.
         """
+        try:
+            async with timeout(self.timeout):
+                log.warning('UDP is not supported! [%s] %s:%s' %
+                            (co.protocol, co.ip, co.port))
+        except asyncio.TimeoutError:
+            log.debug('Failure: TimeoutError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
 
-        log.warning('TCP/UDP is not supported! [%s] %s:%s' %
-                    (co.protocol, co.ip, co.port))
         return co
 
-    def create_comms(self):
+    async def tickle_tcp(self, co):
         """
-        Create comm objects for each attempt.
+        Should be overridden.
+        Probe the server for data and make a determination based on
+        send/recv traffic.
         """
+        try:
+            async with timeout(self.timeout):
+                log.warning('TCP is not supported! [%s] %s:%s' %
+                            (co.protocol, co.ip, co.port))
+        except asyncio.TimeoutError:
+            log.debug('Failure: TimeoutError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
 
-        commsl = []
-        for proto in self.protocols:
-            for ip in self.ips:
-                for port in self.ports:
-                    commsl.append(CommObject(ip=ip, port=port,
-                                             protocol=proto))
-
-        return commsl
+        return co
 
     def parse_protocols(self, protocols):
 
         protosl = []
         if not protocols:
-            self.ports = protosl
             raise argparse.ArgumentError(
                         None,
                         'A protocol argument must be supplied.'
+                    )
+
+        if not set(protocols).issubset(self.supported_protocols):
+            raise argparse.ArgumentError(
+                        None,
+                        'You must supply a supported protocol.'
                     )
 
         protosl = sorted(set(protocols))
@@ -220,39 +244,22 @@ class Discover():
 
     def parse_ips(self, ips):
 
-        ipsl = []
-
         if not ips:
-            self.ips = ipsl
+            self.ips = []
             return
 
         for ip in ips:
 
-            cidr = True if '/' in ip else False
-
-            if cidr:
-                try:
-                    ipsl.extend([str(i)
-                                 for i in ipaddress.ip_network(ip).hosts()])
-                except ValueError as e:
-                    log.error(
-                        'There was a problem processing IP address input '
-                        'using %s. Error: %s. Skipping...' % (ip, e))
-                    continue
-            else:
-                try:
-                    ipsl.append(str(ipaddress.ip_address(ip)))
-                except ValueError as e:
-                    log.error(
-                        'There was a problem processing IP address input '
-                        'using %s. Error: %s. Skipping...' % (ip, e))
-                    continue
-
-        self.ips.extend(ipsl)
+            try:
+                ipaddr = netaddr.IPNetwork(ip)
+                if ipaddr.version == 4:
+                    self.ips.append(ipaddr)
+            except netaddr.core.AddrFormatError as e:
+                log.error('There was a problem processing IP address input '
+                          'using %s. Error: %s. Skipping...' % (ip, e))
+                continue
 
     def parse_domains(self, domains):
-
-        ipsl = []
 
         if not domains:
             return
@@ -271,9 +278,45 @@ class Discover():
                 log.error('Could not resolve domain %s. Skipping...' % d)
                 continue
 
-            ipsl.extend(ipaddrlist)
+            for ip in ipaddrlist:
+                try:
+                    ipaddr = netaddr.IPNetwork(ip)
+                    if ipaddr.version == 4:
+                        self.ips.append(netaddr.IPNetwork(ipaddr))
+                except netaddr.core.AddrFormatError as e:
+                    log.error('There was a problem processing IP address '
+                              'input using %s. Error: %s. Skipping...'
+                              % (ip, e))
+                    continue
 
-        self.ips.extend(ipsl)
+
+def get_comms_count(protocols, ips, ports):
+    """
+    Simply return how many comms objects there will be.
+    """
+
+    ipsum = 0
+    for i in ips:
+        if i.version == 4:
+            if i.size >= 4:
+                ipsum += netaddr.IPRange(i.first + 1, i.last - 1).size
+            else:
+                ipsum += netaddr.IPRange(i.first, i.last).size
+
+    return len(protocols) * ipsum * len(ports)
+
+
+def create_comms(protocols, ipnet, ports):
+    """
+    Create comm objects for each attempt.
+    """
+
+    for proto in protocols:
+        for ipaddr in ipnet:
+            for ip in ipaddr.iter_hosts():
+                for port in ports:
+                    yield CommObject(ip=str(ip), port=port,
+                                     protocol=proto)
 
 
 def generic_args(info='Scan for candidate controllers.'):
@@ -282,8 +325,8 @@ def generic_args(info='Scan for candidate controllers.'):
         description=info)
 
     parser.add_argument('-i', '--ipaddress', nargs='*',
-                        help='One or more IP addresses to scan. To provide a '
-                             'range, use CIDR notation.')
+                        help='One or more IPv4 addresses to scan. To '
+                             'provide a range, use CIDR notation.')
     parser.add_argument('-d', '--domain', nargs='*',
                         help='One or more domains to scan.')
     parser.add_argument('-p', '--port', nargs='*',

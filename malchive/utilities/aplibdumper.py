@@ -48,7 +48,7 @@ class YaraScanner:
     and decompresses.
 
     :ivar list results: List of tuples for each entry, indicating;
-    uncompressed md5, offset, uncompressed size, uncompressed
+    uncompressed sha256, offset, uncompressed size, uncompressed
     crc32 and uncompressed data.
     """
 
@@ -119,7 +119,7 @@ rule aPLib_header
                 r = io.BytesIO(compressed_data)
                 uncompressed_data = apLib.Decompress(r, False).do()
                 self.results.append((
-                    hashlib.md5(uncompressed_data).hexdigest(),
+                    hashlib.sha256(uncompressed_data).hexdigest(),
                     offset,
                     uncompressed_size,
                     uncompressed_crc32,
@@ -141,7 +141,7 @@ rule aPLib_header
         self.rules.match(data=self.data, callback=self.callback)
 
 
-def write_files(target_dir, f_data, f_md5):
+def write_files(target_dir, f_data, f_sha256):
     if target_dir != '.':
         try:
             os.makedirs(target_dir)
@@ -149,14 +149,14 @@ def write_files(target_dir, f_data, f_md5):
             if not os.path.isdir(target_dir):
                 log.error('Could not create %s. Exiting...' % target_dir)
                 sys.exit(2)
-    with open('%s/%s.aplib' % (target_dir, f_md5), 'wb') as f:
+    with open('%s/%s.aplib' % (target_dir, f_sha256), 'wb') as f:
         f.write(f_data)
 
 
 def initialize_parser():
     parser = argparse.ArgumentParser(
         description='Extracts, decompresses, and dumps embedded payloads '
-                    'compressed using aPLib to disk using the MD5 of the '
+                    'compressed using aPLib to disk using the SHA256 of the '
                     'decompressed data as the filename. This is done by '
                     'evaluating an embedded structure that precedes aPLib'
                     ' compressed content.')
@@ -216,7 +216,7 @@ def main():
         if len(scanner.results) == 0:
             continue
 
-        for uncomp_md5, offset, uncomp_size, uncomp_crc32, uncomp_data in \
+        for uncomp_sha256, offset, uncomp_size, uncomp_crc32, uncomp_data in \
                 scanner.results:
 
             h = binascii.crc32(uncomp_data)
@@ -236,15 +236,15 @@ def main():
                            uncomp_size,
                            len(uncomp_data)))
 
-            results.append((uncomp_md5, len(uncomp_data),
+            results.append((uncomp_sha256, len(uncomp_data),
                             '0x%x' % offset, '0x%x' % h))
 
             if not args.suppress_write:
-                write_files(target_dir, uncomp_data, uncomp_md5)
+                write_files(target_dir, uncomp_data, uncomp_sha256)
 
         if len(results) > 0:
             print(tabulate(results,
-                           headers=["MD5", "Size", "Offset", "CRC32"],
+                           headers=["SHA256", "Size", "Offset", "CRC32"],
                            tablefmt="grid"))
 
 

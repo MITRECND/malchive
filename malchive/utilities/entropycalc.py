@@ -80,7 +80,7 @@ def autoint(x):
 def initialize_parser():
     parser = argparse.ArgumentParser(
         description='Take a series of provided files and print the entropy, '
-                    'alongside other information like the filename and MD5.')
+                    'alongside other information like the filename and SHA256.')
     parser.add_argument('infile', metavar='FILE', nargs='*',
                         help='Full path to the file to be processed.')
     parser.add_argument('-o', '--offset', type=autoint, default=0,
@@ -141,14 +141,14 @@ def main():
 
         stream = stream[offset:total_size]
 
-        md5 = hashlib.md5(stream).hexdigest()
+        sha256 = hashlib.sha256(stream).hexdigest()
         ent = entropy(stream, 'shannon')
 
-        results.append((md5, basename, ent))
+        results.append((sha256, basename, ent))
 
     results = sorted(results, key=operator.itemgetter(2, 1, 0))
     if len(results) > 0:
-        print(tabulate(results, headers=["MD5", "Filename", "Entropy"],
+        print(tabulate(results, headers=["SHA256", "Filename", "Entropy"],
                        tablefmt="grid"))
 
 

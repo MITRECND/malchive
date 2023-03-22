@@ -31,7 +31,7 @@ log = logging.getLogger(__name__)
 
 def getcab(buff):
     """
-    Return a dictionary of information about cabs such as; size, offset, MD5,
+    Return a dictionary of information about cabs such as; size, offset, SHA256,
     and the cab buffer.
 
     :param bytes buff: File to look for cabs.
@@ -59,7 +59,7 @@ def getcab(buff):
             cabs['Object_%s' % counter] = {'buff': cab,
                                            'size': cabsize,
                                            'offset': m.start(0) + 4,
-                                           'md5': hashlib.md5(cab).hexdigest()
+                                           'sha256': hashlib.sha256(cab).hexdigest()
                                            }
             counter += 1
 
@@ -120,7 +120,7 @@ def main():
             log.info('Writing to directory: %s' % target_dir)
 
         for k, v in list(cabinfo.items()):
-            results.append((v['md5'], v['size'], v['offset']))
+            results.append((v['sha256'], v['size'], v['offset']))
 
             if not args.suppress_write:
                 if target_dir != '.':
@@ -131,12 +131,12 @@ def main():
                             log.error('Could not create %s. Exiting...'
                                       % target_dir)
                             sys.exit(2)
-                with open('%s/%s' % (target_dir, v['md5']), 'wb') as f:
+                with open('%s/%s' % (target_dir, v['sha256']), 'wb') as f:
                     f.write(v['buff'])
 
         if len(results) > 0:
             print(tabulate(results,
-                           headers=["MD5", "Size", "Offset"],
+                           headers=["SHA256", "Size", "Offset"],
                            tablefmt="grid"))
 
 

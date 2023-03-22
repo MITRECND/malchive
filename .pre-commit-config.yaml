@@ -14,7 +14,23 @@ repos:
     rev: "3.7.9"
     hooks:
     -   id: flake8
+        args:
+            - "--max-line-length=100"
 -   repo: https://github.com/pre-commit/mirrors-mypy.git
     rev: v0.761
     hooks:
     -   id: mypy
+        name: malchive utilities
+        files: ^malchive/utilities
+    -   id: mypy
+        name: malchive decoders
+        files: ^malchive/decoders/
+    -   id: mypy
+        name: malchive active discovery
+        files: ^malchive/active_discovery/
+    -   id: mypy
+        name: malchive extras
+        files: ^malchive/extras/
+    -   id: mypy
+        name: malchive helpers
+        files: ^malchive/helpers/

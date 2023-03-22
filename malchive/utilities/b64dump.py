@@ -120,8 +120,8 @@ def main():
             log.info('Writing to directory: %s' % target_dir)
 
         for d in decodes:
-            _md5 = hashlib.md5(d).hexdigest()
-            b64_content.append((basename, len(d), _md5))
+            _sha256 = hashlib.sha256(d).hexdigest()
+            b64_content.append((basename, len(d), _sha256))
 
             if not args.suppress_write:
                 if target_dir != '.':
@@ -132,12 +132,12 @@ def main():
                             log.error('Could not create %s. Exiting...'
                                       % target_dir)
                             sys.exit(2)
-                with open('%s/%s' % (target_dir, _md5), 'wb') as f:
+                with open('%s/%s' % (target_dir, _sha256), 'wb') as f:
                     f.write(d)
 
     if len(b64_content) > 0:
         print(tabulate(b64_content,
-                       headers=["Filename", "Size", "MD5"],
+                       headers=["Filename", "Size", "SHA256"],
                        tablefmt="grid"))
 
 

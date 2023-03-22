@@ -19,7 +19,7 @@ import logging
 from typing import List
 from malchive.helpers import BinDataHelper
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"
 __author__ = "Jason Batchelor"
 
 log = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ class GenericXor(BinDataHelper.LiteCrypt):
                  count: int = 0,
                  skip_nulls: bool = False,
                  skip_key: bool = False,
+                 skip_strict: bool = False,
                  *args,
                  **kwargs):
 
@@ -39,6 +40,7 @@ class GenericXor(BinDataHelper.LiteCrypt):
         self.key_count: int = 0
         self.skip_nulls: bool = False
         self.skip_key: bool = False
+        self.skip_strict: bool = False
 
         if not isinstance(key, list):
             raise TypeError('Key sequence must be passed as a list.')
@@ -52,6 +54,7 @@ class GenericXor(BinDataHelper.LiteCrypt):
         self.key_count = count
         self.skip_nulls = skip_nulls
         self.skip_key = skip_key
+        self.skip_strict = skip_strict
 
         log.info('Proceeding using key: [%s]' %
                  ', '.join(hex(x) for x in self.key))
@@ -77,6 +80,8 @@ class GenericXor(BinDataHelper.LiteCrypt):
             if (self.skip_nulls and byte == 0x00) or \
                     (self.skip_key and byte == k):
                 decoded.append(byte)
+                if self.skip_strict:
+                    continue
             else:
                 decoded.append(byte ^ k & 0xff)
 
@@ -113,6 +118,11 @@ def initialize_parser():
                         action='store_true',
                         default=False,
                         help='Skip bytes that match the supplied key value.')
+    parser.add_argument('--skip-strict',
+                        action='store_true',
+                        default=False,
+                        help='Do not increment or modify key in any way if a '
+                        'skip condition is satisfied.')
 
     return parser
 
@@ -135,6 +145,7 @@ def main():
         count=args.count,
         skip_nulls=args.skip_nulls,
         skip_key=args.skip_key,
+        skip_strict=args.skip_strict,
         buff=buff,
         offset=args.offset,
         size=args.size,
