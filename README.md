@@ -30,6 +30,12 @@ The malchive is a packaged distribution that is easily installed and will automa
 
 ### Steps ###
 
+* Python 3.11+ is required. You may need to download or add a new repository to install this. For example, using Ubuntu you will need to execute the following:
+```
+sudo add-apt-repository ppa:deadsnakes/ppa
+sudo apt install python3.11 python3.11-distutils python3.11-dev
+curl -sS https://bootstrap.pypa.io/get-pip.py | python3.11
+```
 You will need to install some dependencies for some of the required Python modules to function correctly.
 * First do a source install of [YARA](https://github.com/VirusTotal/yara/releases) and make sure you compile using `--dotnet`
 * Next source install the [YARA Python](https://github.com/VirusTotal/yara-python/releases/) package.

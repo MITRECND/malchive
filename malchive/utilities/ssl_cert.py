@@ -19,12 +19,12 @@
 import asyncio
 import logging
 import ssl
-import socket
 import json
 import hashlib
 from malchive.helpers import discovery
+from async_timeout import timeout
 
-__version__ = "2.0.0"
+__version__ = "2.1.0"
 __author__ = "Marcus Eddy"
 __contributors__ = "Jason Batchelor"
 
@@ -33,7 +33,16 @@ log = logging.getLogger(__name__)
 
 class SSLInfo(discovery.Discover):
 
-    # TODO: make async
+    def __init__(self,
+                 sni_host: str = None,
+                 *args,
+                 **kwargs):
+
+        self.sni_host: str = sni_host
+        if self.sni_host is not None:
+            log.debug('Using SNI hostname: \'%s\'' % self.sni_host)
+        super().__init__(*args, **kwargs)
+
     async def tickle_tcp(self, co):
         """
         Probe the server for data and make a determination based on
@@ -41,43 +50,42 @@ class SSLInfo(discovery.Discover):
         """
 
         log.info('Checking: %s:%s' % (co.ip, co.port))
-        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        sock.settimeout(self.timeout)
-        wrapped_s = ssl.wrap_socket(sock)
 
         try:
-            wrapped_s.connect((co.ip, co.port))
-        except ConnectionRefusedError:
-            log.warning('No SSL info found!')
-            return co
+            async with timeout(self.timeout):
+                reader, writer = await asyncio.open_connection(co.ip, co.port)
+                context = ssl.create_default_context()
+                context.check_hostname = False
+                context.verify_mode = ssl.CERT_NONE
+                context.set_ciphers('DEFAULT:@SECLEVEL=1')
+                await writer.start_tls(
+                                       context,
+                                       server_hostname=self.sni_host
+                                      )
 
-        der_cert_bin = wrapped_s.getpeercert(True)
-        thumb_md5 = hashlib.md5(der_cert_bin).hexdigest()
-        thumb_sha1 = hashlib.sha1(der_cert_bin).hexdigest()
-        thumb_sha256 = hashlib.sha256(der_cert_bin).hexdigest()
+                obj = writer.get_extra_info('ssl_object')
+                der_cert_bin = obj.getpeercert(True)
 
-        meta = {
-            'Query': '%s:%s' % (co.ip, co.port),
-            'MD5': thumb_md5,
-            'SHA1': thumb_sha1,
-            'SHA256': thumb_sha256,
-        }
+                meta = {
+                    'Query': '%s:%s' % (co.ip, co.port),
+                    'SNI': '%s' % self.sni_host,
+                }
 
-        co.details['meta'] = meta
-        co.details['payload'] = der_cert_bin
-        co.success = True
+                co.details = meta
+                co.payload = der_cert_bin
+                co.success = True
+
+        except asyncio.TimeoutError:
+            log.debug('Failure: TimeoutError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
+        except ConnectionResetError:
+            log.debug('Failure: ConnectionResetError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
+        except Exception as e:
+            log.debug('General failure: %s: %s:%s:%s' %
+                      (str(e), co.protocol, co.ip, co.port))
+
         return co
-
-    def write_payload(self, payload, directory='.'):
-        """
-        Write the retrieved payload to disk.
-        """
-
-        sha256 = hashlib.sha256(payload).hexdigest()
-        fname = '%s/%s.der' % (directory, sha256)
-        with open(fname, 'wb') as f:
-            f.write(payload)
-        log.info('%s written to disk!' % fname)
 
 
 def initialize_parser():
@@ -99,6 +107,14 @@ def initialize_parser():
                         help='How long (in seconds) to wait before timeout '
                              'for each connection attempt. Defaults to five '
                              'seconds.')
+    parser.add_argument('--sni-host', nargs='?', type=str,
+                        default=None,
+                        help='Apply the given domain as an SNI parameter '
+                        'for all domain related requests (when given). '
+                        'The provided domain is used when initiating '
+                        'a TLS/SSL handshake. This is required for some '
+                        'providers hosting multiple TLS enabled IPs off a '
+                        'single domain.')
     parser.add_argument('-w', '--write', action='store_true',
                         default=False,
                         help='Write retrieved DER to disk '
@@ -136,12 +152,13 @@ def main():
             sys.exit(2)
 
     d = SSLInfo(
+        sni_host=args.sni_host,
         ips=args.ipaddress,
         ports=args.port,
         domains=args.domain,
         timeout=args.timeout,
         protocols=['tcp'],
-    )
+        )
 
     comms = discovery.create_comms(
             d.protocols,
@@ -153,11 +170,21 @@ def main():
     asyncio.run(d.run(comms, results))
 
     for co in results:
-        if co.success and 'meta' in co.details.keys():
-            jo = json.dumps(co.details['meta'], indent=4)
-            print(jo)
-        if args.write and 'payload' in co.details.keys():
-            d.write_payload(co.details['payload'], directory)
+        if len(co.payload) > 0:
+            thumb_sha256 = hashlib.sha256(co.payload).hexdigest()
+            if co.success:
+                success = {
+                            'Cert Sha256': thumb_sha256,
+                            'Details': co.details
+                          }
+
+                jo = json.dumps(success, indent=4)
+                print(jo)
+            if args.write:
+                fname = '%s/%s.der' % (directory, thumb_sha256)
+                with open(fname, 'wb') as f:
+                    f.write(co.payload)
+                log.info('%s written to disk!' % fname)
 
 
 if __name__ == '__main__':
