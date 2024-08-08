@@ -34,12 +34,12 @@ log = logging.getLogger(__name__)
 class SSLInfo(discovery.Discover):
 
     def __init__(self,
-                 sni_host: str = None,
+                 sni_host: str = "",
                  *args,
                  **kwargs):
 
         self.sni_host: str = sni_host
-        if self.sni_host is not None:
+        if len(self.sni_host):
             log.debug('Using SNI hostname: \'%s\'' % self.sni_host)
         super().__init__(*args, **kwargs)
 
@@ -108,7 +108,7 @@ def initialize_parser():
                              'for each connection attempt. Defaults to five '
                              'seconds.')
     parser.add_argument('--sni-host', nargs='?', type=str,
-                        default=None,
+                        default="",
                         help='Apply the given domain as an SNI parameter '
                         'for all domain related requests (when given). '
                         'The provided domain is used when initiating '
