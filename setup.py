@@ -110,10 +110,10 @@ def main():
 
     setup(
         name='malchive',
-        version='2.0',
+        version='2.1',
         packages=packages,
         include_package_data=True,
-        python_requires='>=3.5',
+        python_requires='>=3.11',
         extras_require={
             'extras': ['python-camellia'],
             },

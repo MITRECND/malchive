@@ -15,10 +15,12 @@
 # limitations under the License.
 
 import logging
-import requests
+import aiohttp
+import asyncio
+from async_timeout import timeout
 from malchive.helpers import discovery
 
-__version__ = "1.0.0"
+__version__ = "2.0.0"
 __author__ = "First Last"
 
 log = logging.getLogger(__name__)
@@ -26,7 +28,17 @@ log = logging.getLogger(__name__)
 
 class ExampleTemplate(discovery.Discover):
 
-    def tickle_http(self, co, timeout):
+    def __init__(self,
+                 *args,
+                 **kwargs):
+        # any overrides, or busy work that needs to be done
+        # pre-scan can be done here...
+        self.magic_request = b'GET / HTTP/1.1\r\n\r\n'
+        self.magic_response = b'HTTP/1.1 200 OK'
+
+        super().__init__(*args, **kwargs)
+
+    async def tickle_http(self, co):
         """
         Probe the server for data and make a determination based on
         request/response.
@@ -39,30 +51,66 @@ class ExampleTemplate(discovery.Discover):
         }
 
         url = f"{co.protocol}://{co.ip}:{co.port}"
-        r = requests.get(url, headers=headers, timeout=timeout)
 
-        if r.status_code == 200:
-            co.success = True
+        log.info('Making attempt using: %s' % url)
+
+        conn = aiohttp.TCPConnector()
+        async with aiohttp.ClientSession(connector=conn) as session:
+            try:
+                async with timeout(self.timeout):
+                    async with session.get(url,
+                                           headers=headers,
+                                           read_bufsize=10000,
+                                           verify_ssl=False
+                                           ) as resp:
+                        if resp.status == 200:
+                            co.success = True
+
+            except aiohttp.ClientConnectionError as e:
+                log.debug('Failure: ClientConnectionError %s: %s:%s:%s' %
+                          (str(e), co.protocol, co.ip, co.port))
+
+            except asyncio.TimeoutError:
+                log.debug('Failure: TimeoutError: %s:%s:%s' %
+                          (co.protocol, co.ip, co.port))
+
+            except aiohttp.TooManyRedirects:
+                log.debug('Failure: TooManyRedirects: %s:%s:%s' %
+                          (co.protocol, co.ip, co.port))
+
+            except Exception as e:
+                log.debug('General failure: %s: %s:%s:%s' %
+                          (str(e), co.protocol, co.ip, co.port))
 
         return co
 
-    def tickle_socket(self, co, timeout=5):
+    async def tickle_tcp(self, co):
         """
         Probe the server for data and make a determination based on
         send/recv traffic.
         """
 
-        s = self.connect(co, timeout)
+        try:
+            async with timeout(self.timeout):
+                reader, writer = await asyncio.open_connection(co.ip, co.port)
 
-        data = s.recv(0x100)
-        if len(data):
-            # if we validated the response, great set success to true
-            co.success = True
-            # details is a dictionary where we can capture
-            # any additional items of interest if desired
-            co.details['size'] = len(data)
-        else:
-            log.info('Retrieved data did not match desired parameters.')
+                writer.write(self.magic_request)
+                data = await reader.read(len(self.magic_response))
+
+                if data == self.magic_response:
+                    co.success = True
+
+        except asyncio.TimeoutError:
+            log.debug('Failure: TimeoutError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
+
+        except ConnectionRefusedError:
+            log.debug('Failure: ConnectionRefusedError: %s:%s:%s' %
+                      (co.protocol, co.ip, co.port))
+
+        except Exception as e:
+            log.debug('General failure: %s: %s:%s:%s' %
+                      (str(e), co.protocol, co.ip, co.port))
 
         return co
 
@@ -91,9 +139,17 @@ def main():
         timeout=args.timeout,
         protocols=args.protocol,
         )
-    d.run()
 
-    for co in d.results:
+    comms = discovery.create_comms(
+            d.protocols,
+            d.ips,
+            d.ports
+            )
+
+    results = []
+    asyncio.run(d.run(comms, results))
+
+    for co in results:
         if co.success:
             print('Successfully discovered candidate! [%s] %s:%s' %
                   (co.protocol, co.ip, co.port))
